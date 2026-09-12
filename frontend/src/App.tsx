@@ -1,7 +1,7 @@
 import React from "react";
 import { useEffect, useMemo, useState } from "react";
 import { Link, Navigate, Route, Routes, useNavigate } from "react-router-dom";
-import { api, refreshAccessToken, setAccessToken } from "./api";
+import { api, getAccessToken, refreshAccessToken, setAccessToken } from "./api";
 import { useAuth } from "./store";
 import { connectSocket } from "./socket";
 
@@ -18,7 +18,6 @@ function Login() {
       const { data } = await api.post("/auth/login", { email, password });
       setAccessToken(data.data.accessToken);
       setUser(data.data.user);
-      connectSocket(data.data.accessToken);
       navigate("/");
     } catch (err: any) {
       setError(err.response?.data?.error?.message || "Login failed");
@@ -41,26 +40,34 @@ function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const [online, setOnline] = useState(0);
 
- useEffect(() => {
+useEffect(() => {
   if (!user) return;
 
   let socket: ReturnType<typeof connectSocket> | null = null;
 
-  refreshAccessToken()
-    .then((token) => {
+  async function initialize() {
+    let token = getAccessToken();
+
+    // Only refresh when there is no access token,
+    // such as after a browser refresh.
+    if (!token) {
+      token = await refreshAccessToken();
+
       if (!token) {
         setUser(null);
         return;
       }
 
       setAccessToken(token);
+    }
 
-      socket = connectSocket(token);
-      socket.on("presence:count", setOnline);
-    })
-    .catch(() => {
-      setUser(null);
-    });
+    socket = connectSocket(token);
+    socket.on("presence:count", setOnline);
+  }
+
+  initialize().catch(() => {
+    setUser(null);
+  });
 
   return () => {
     socket?.disconnect();
